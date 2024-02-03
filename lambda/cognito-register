@@ -1,0 +1,123 @@
+import json
+import boto3
+from botocore.exceptions import ClientError
+import hmac
+import hashlib
+import base64
+import os
+
+# Initializing Cognito client
+cognito_client = boto3.client("cognito-idp")
+
+# Specify your Cognito user pool details
+user_pool_id = os.environ.get("USER_POOL_ID")
+client_id = os.environ.get("CLIENT_ID")
+client_secret = os.environ.get("CLIENT_SECRET")
+
+
+def lambda_handler(event, context):
+    # Extracting name, email, and password from the API Gateway POST request body
+    request_body = json.loads(event["body"])
+    action = event.get("queryStringParameters", {}).get("action")
+
+    # Handle confirmation action
+    if action == "confirm":
+        return confirm_user(request_body)
+    else:
+        return register_user(request_body)
+
+
+def calculate_secret_hash(client_id, client_secret, username):
+    message = username + client_id
+    dig = hmac.new(
+        str(client_secret).encode("utf-8"),
+        msg=str(message).encode("utf-8"),
+        digestmod=hashlib.sha256,
+    ).digest()
+    return base64.b64encode(dig).decode()
+
+
+def register_user(request_body):
+    name = request_body.get("name")
+    email = request_body.get("email")
+    password = request_body.get("password")
+    try:
+        # Registering the user
+        response = cognito_client.sign_up(
+            ClientId=client_id,
+            SecretHash=calculate_secret_hash(client_id, client_secret, email),
+            Username=email,
+            Password=password,
+            UserAttributes=[
+                {"Name": "name", "Value": name},
+                {"Name": "email", "Value": email},
+            ],
+        )
+        print(response)
+        # If the registration is successful, the user needs to confirm their registration
+        api_response = {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "message": "Registration successful. Please check your email for confirmation."
+                }
+            ),
+            "headers": {
+                "Content-Type": "application/json",
+            },
+        }
+
+        return api_response
+
+    except ClientError as e:
+        # If registration fails, handle the error and return an appropriate response
+        error_message = e.response["Error"]["Message"]
+        api_response = {
+            "statusCode": 400,
+            "body": json.dumps(
+                {"error": "Registration failed", "message": error_message}
+            ),
+            "headers": {
+                "Content-Type": "application/json",
+            },
+        }
+        return api_response
+
+
+def confirm_user(request_body):
+    # Extract confirmation code and username from query parameters
+    confirmation_code = request_body.get("code", "1")
+    username = request_body.get("email", "")
+    try:
+        # Confirming the user registration
+        response = cognito_client.confirm_sign_up(
+            ClientId=client_id,
+            SecretHash=calculate_secret_hash(client_id, client_secret, username),
+            Username=username,
+            ConfirmationCode=confirmation_code,
+        )
+
+        # If confirmation is successful, return a success response
+        api_response = {
+            "statusCode": 200,
+            "body": json.dumps({"message": "User confirmation successful"}),
+            "headers": {
+                "Content-Type": "application/json",
+            },
+        }
+
+        return api_response
+
+    except ClientError as e:
+        # If confirmation fails, handle the error and return an appropriate response
+        error_message = e.response["Error"]["Message"]
+        api_response = {
+            "statusCode": 400,
+            "body": json.dumps(
+                {"error": "User confirmation failed", "message": error_message}
+            ),
+            "headers": {
+                "Content-Type": "application/json",
+            },
+        }
+        return api_response
