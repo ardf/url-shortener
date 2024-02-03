@@ -12,7 +12,7 @@ This repository contains the backend implementation of a URL shortener project. 
 
 ## Architecture
 
-![High Level Architecture of the project](./url-shortener-service\url-shortner-service-architecture.drawio.png)
+![High Level Architecture of the project](https://github.com/ardf/url-shortener/blob/master/url-shortner-service-architecture.drawio.png?raw=true)
 
 ## Usage
 
